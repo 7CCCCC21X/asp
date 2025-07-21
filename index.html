@@ -1,71 +1,115 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<title>Aspecta BuildKey 批量资格查询</title>
-<style>
-body{font-family:"SF Pro","Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:2rem;max-width:960px}
-h1{font-size:1.6rem}
-input{margin:.8rem 0}
-table{width:100%;border-collapse:collapse;margin-top:1rem}
-th,td{border:1px solid #ccc;padding:.45rem .65rem;font-size:.9rem}
-th{background:#f7f7f7}
-.tag{display:inline-block;padding:.15rem .6rem;border-radius:.3rem;font-size:.75rem;color:#fff}
-.new-early{background:#28a745}
-.early{background:#007bff}
-.none{background:#6c757d}
-</style>
-</head>
-<body>
-<h1>Aspecta BuildKey 批量资格查询</h1>
+  <head>
+    <meta charset="utf-8" />
+    <title>ASP 资格批量查询</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-100 p-6">
+    <h1 class="text-3xl font-bold mb-6 text-center">ASP BuildKey / 早鸟资格批量查询</h1>
 
-<input type="file" id="file" accept=".csv,.tsv,.txt">
-<small>支持 CSV / TSV / 纯文本：<strong>第1列=地址</strong>，后面列任意语言描述。</small>
+    <!-- 统计信息 -->
+    <div id="stats" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"></div>
 
-<table id="tbl" hidden>
-  <thead><tr><th>#</th><th>地址</th><th>资格</th></tr></thead>
-  <tbody></tbody>
-</table>
+    <!-- 早鸟 + BuildKey 表格 -->
+    <section class="mb-12">
+      <h2 class="text-2xl font-semibold mb-2">早鸟 + BuildKey（Whitelist + Key）</h2>
+      <div class="overflow-x-auto rounded-lg shadow">
+        <table class="min-w-full bg-white">
+          <thead class="bg-slate-200">
+            <tr>
+              <th class="px-4 py-2 text-left">地址</th>
+              <th class="px-4 py-2 text-left">说明</th>
+            </tr>
+          </thead>
+          <tbody id="earlyTable"></tbody>
+        </table>
+      </div>
+    </section>
 
-<script>
-// 简易解析：自动识别逗号、分号、Tab，并兼容带引号字段
-function parse(text){
-  // 去掉 BOM & 末尾空行
-  text = text.replace(/^\uFEFF/,'').trimEnd();
-  const lines = text.split(/\r?\n/);
-  return lines.map(l=>{
-    // 先尝试 CSV 引号
-    if(/^".*",".*"$/.test(l)) return l.slice(1,-1).split(/","/);
-    // 再尝试分隔符: tab > ; > ,
-    const delimiter = /\t/.test(l) ? '\t' : /;/.test(l) ? ';' : ',';
-    return l.split(delimiter);
-  });
-}
+    <!-- 仅 BuildKey 表格 -->
+    <section>
+      <h2 class="text-2xl font-semibold mb-2">仅 BuildKey（Key Only）</h2>
+      <div class="overflow-x-auto rounded-lg shadow">
+        <table class="min-w-full bg-white">
+          <thead class="bg-slate-200">
+            <tr>
+              <th class="px-4 py-2 text-left">地址</th>
+              <th class="px-4 py-2 text-left">说明</th>
+            </tr>
+          </thead>
+          <tbody id="keyTable"></tbody>
+        </table>
+      </div>
+    </section>
 
-document.getElementById('file').addEventListener('change',e=>{
-  const f=e.target.files[0]; if(!f) return;
-  const reader=new FileReader();
-  reader.onload=ev=>{
-    const rows=parse(ev.target.result);
-    const tbody=document.querySelector('#tbl tbody');
-    tbody.innerHTML='';
-    rows.forEach((r,i)=>{
-      const addr=r[0]?.trim();
-      const desc=r.slice(1).join(' ').toLowerCase();
-      let tag='none',text='不符合';
-      if(/early\s*access/.test(desc)&&/buildkey/.test(desc)){
-        tag='new-early'; text='打新 + 早鸟';
-      }else if(/buildkey/.test(desc)){
-        tag='early'; text='早鸟';
+    <script>
+      /**
+       * 读取 data.txt 并渲染
+       * data.txt 放在与 index.html 同级目录，格式：
+       * 地址<TAB>中文描述<TAB>英文描述\n
+       */
+      async function loadData() {
+        try {
+          const res = await fetch('data.txt');
+          if (!res.ok) throw new Error('读取 data.txt 失败');
+          const text = await res.text();
+
+          // 按行拆分
+          const rows = text.trim().split(/\r?\n/);
+
+          // 解析成对象数组
+          const parsed = rows.map(line => {
+            const [addr, zh, en] = line.split('\t');
+            return { addr, zh, en };
+          });
+
+          // 根据中文描述判断类别
+          const earlyList = parsed.filter(r => r.zh.includes('浼樺厛') || r.zh.includes('Early Access')); // 早鸟+打新
+          const keyOnlyList = parsed.filter(r => !earlyList.includes(r)); // 只有打新
+
+          // 渲染表格
+          renderTable('#earlyTable', earlyList);
+          renderTable('#keyTable', keyOnlyList);
+
+          // 渲染统计
+          renderStats(earlyList.length, keyOnlyList.length, parsed.length);
+        } catch (err) {
+          document.body.innerHTML = `<div class="text-red-600 text-center mt-20">${err.message}</div>`;
+        }
       }
-      const tr=document.createElement('tr');
-      tr.innerHTML=`<td>${i+1}</td><td>${addr}</td><td><span class="tag ${tag}">${text}</span></td>`;
-      tbody.appendChild(tr);
-    });
-    document.getElementById('tbl').hidden=false;
-  };
-  reader.readAsText(f);
-});
-</script>
-</body>
+
+      // 生成 <tr>
+      function renderTable(selector, data) {
+        const tbody = document.querySelector(selector);
+        tbody.innerHTML = data
+          .map(
+            r => `<tr class="even:bg-slate-50 hover:bg-amber-50"><td class="px-4 py-1 font-mono break-all">${r.addr}</td><td class="px-4 py-1">${r.en || r.zh}</td></tr>`
+          )
+          .join('');
+      }
+
+      // 显示总数
+      function renderStats(early, keyOnly, total) {
+        document.getElementById('stats').innerHTML = `
+          <div class="bg-white rounded-lg shadow p-4 text-center">
+            <div class="text-xl font-bold">早鸟 + Key</div>
+            <div class="text-3xl font-semibold text-emerald-600">${early}</div>
+          </div>
+          <div class="bg-white rounded-lg shadow p-4 text-center">
+            <div class="text-xl font-bold">仅 Key</div>
+            <div class="text-3xl font-semibold text-blue-600">${keyOnly}</div>
+          </div>
+          <div class="bg-white rounded-lg shadow p-4 text-center md:col-span-2">
+            <div class="text-xl font-bold">总地址数</div>
+            <div class="text-3xl font-semibold text-fuchsia-600">${total}</div>
+          </div>`;
+      }
+
+      // 初始化
+      loadData();
+    </script>
+  </body>
 </html>
