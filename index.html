@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Aspecta BuildKey 批量资格查询</title>
+<style>
+body{font-family:"SF Pro","Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:2rem;max-width:960px}
+h1{font-size:1.6rem}
+input{margin:.8rem 0}
+table{width:100%;border-collapse:collapse;margin-top:1rem}
+th,td{border:1px solid #ccc;padding:.45rem .65rem;font-size:.9rem}
+th{background:#f7f7f7}
+.tag{display:inline-block;padding:.15rem .6rem;border-radius:.3rem;font-size:.75rem;color:#fff}
+.new-early{background:#28a745}
+.early{background:#007bff}
+.none{background:#6c757d}
+</style>
+</head>
+<body>
+<h1>Aspecta BuildKey 批量资格查询</h1>
+
+<input type="file" id="file" accept=".csv,.tsv,.txt">
+<small>支持 CSV / TSV / 纯文本：<strong>第1列=地址</strong>，后面列任意语言描述。</small>
+
+<table id="tbl" hidden>
+  <thead><tr><th>#</th><th>地址</th><th>资格</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<script>
+// 简易解析：自动识别逗号、分号、Tab，并兼容带引号字段
+function parse(text){
+  // 去掉 BOM & 末尾空行
+  text = text.replace(/^\uFEFF/,'').trimEnd();
+  const lines = text.split(/\r?\n/);
+  return lines.map(l=>{
+    // 先尝试 CSV 引号
+    if(/^".*",".*"$/.test(l)) return l.slice(1,-1).split(/","/);
+    // 再尝试分隔符: tab > ; > ,
+    const delimiter = /\t/.test(l) ? '\t' : /;/.test(l) ? ';' : ',';
+    return l.split(delimiter);
+  });
+}
+
+document.getElementById('file').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const rows=parse(ev.target.result);
+    const tbody=document.querySelector('#tbl tbody');
+    tbody.innerHTML='';
+    rows.forEach((r,i)=>{
+      const addr=r[0]?.trim();
+      const desc=r.slice(1).join(' ').toLowerCase();
+      let tag='none',text='不符合';
+      if(/early\s*access/.test(desc)&&/buildkey/.test(desc)){
+        tag='new-early'; text='打新 + 早鸟';
+      }else if(/buildkey/.test(desc)){
+        tag='early'; text='早鸟';
+      }
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${i+1}</td><td>${addr}</td><td><span class="tag ${tag}">${text}</span></td>`;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('tbl').hidden=false;
+  };
+  reader.readAsText(f);
+});
+</script>
+</body>
+</html>
