@@ -1,115 +1,116 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <title>ASP 资格批量查询</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-  </head>
-  <body class="min-h-screen bg-slate-100 p-6">
-    <h1 class="text-3xl font-bold mb-6 text-center">ASP BuildKey / 早鸟资格批量查询</h1>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ASP 资格批量查询</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gray-100 flex flex-col items-center py-8 px-4">
+  <h1 class="text-2xl font-bold mb-6">$ASP BuildKey / 早鸟资格 批量查询</h1>
 
-    <!-- 统计信息 -->
-    <div id="stats" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"></div>
+  <!-- 输入区 -->
+  <div class="w-full max-w-3xl bg-white shadow-md rounded-lg p-6 mb-8">
+    <label for="addrInput" class="block text-sm font-medium text-gray-700 mb-2">请输入 Solana 地址（每行一个）：</label>
+    <textarea id="addrInput" rows="6" class="w-full border rounded-md p-3 focus:ring-indigo-500 focus:border-indigo-500 text-sm placeholder-gray-400" placeholder="示例:\nB8ESc5FyPt82pt9Mk4S9yL6qGjAYiJrNLG1c1ACMCX7Z\nr16HVAmEPp6aEg7rfgR5eqEwwL5RwRQFRt6wnPf76RP"></textarea>
+    <button id="searchBtn" class="mt-4 inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded">查询</button>
+    <p id="statusMsg" class="text-sm text-gray-600 mt-3"></p>
+  </div>
 
-    <!-- 早鸟 + BuildKey 表格 -->
-    <section class="mb-12">
-      <h2 class="text-2xl font-semibold mb-2">早鸟 + BuildKey（Whitelist + Key）</h2>
-      <div class="overflow-x-auto rounded-lg shadow">
-        <table class="min-w-full bg-white">
-          <thead class="bg-slate-200">
-            <tr>
-              <th class="px-4 py-2 text-left">地址</th>
-              <th class="px-4 py-2 text-left">说明</th>
-            </tr>
-          </thead>
-          <tbody id="earlyTable"></tbody>
-        </table>
+  <!-- 结果统计 -->
+  <div id="summary" class="w-full max-w-3xl mb-6"></div>
+
+  <!-- 结果表格 -->
+  <div id="results" class="w-full max-w-5xl space-y-10"></div>
+
+<script>
+// 全局数据存储
+const dataset = new Map();  // address -> category ("both" | "buildKey")
+let dataReady = false;
+
+// 解析行 -> {addr, category}
+function parseLine(line) {
+  if (!line.trim()) return null;
+  const parts = line.split(/\t|,/); // 允许 Tab 或逗号
+  const addr = parts[0].trim();
+  if (!addr) return null;
+  const text = (parts[2] || parts[1] || '').toLowerCase();
+  const isEarly = text.includes('early access');
+  return { addr, category: isEarly ? 'both' : 'buildKey' };
+}
+
+// 加载 data.txt
+fetch('data.txt')
+  .then(r => r.text())
+  .then(txt => {
+    txt.split(/\r?\n/).forEach(line => {
+      const rec = parseLine(line);
+      if (rec) dataset.set(rec.addr, rec.category);
+    });
+    dataReady = true;
+    document.getElementById('statusMsg').textContent = `数据加载完成，共 ${dataset.size} 条记录。`;
+  })
+  .catch(err => {
+    console.error(err);
+    document.getElementById('statusMsg').textContent = '加载 data.txt 失败，请检查文件路径。';
+  });
+
+// 事件绑定
+const searchBtn = document.getElementById('searchBtn');
+searchBtn.addEventListener('click', () => {
+  if (!dataReady) {
+    alert('数据尚未加载完成，请稍后再试');
+    return;
+  }
+  const raw = document.getElementById('addrInput').value.trim();
+  if (!raw) {
+    alert('请输入至少一个地址');
+    return;
+  }
+  const addrs = raw.split(/\r?\n/).map(a=>a.trim()).filter(Boolean);
+  const both = [];
+  const buildOnly = [];
+  const notFound = [];
+
+  addrs.forEach(addr => {
+    const cat = dataset.get(addr);
+    if (cat === 'both') both.push(addr);
+    else if (cat === 'buildKey') buildOnly.push(addr);
+    else notFound.push(addr);
+  });
+
+  // 更新统计
+  const summary = document.getElementById('summary');
+  summary.innerHTML = `
+    <div class="grid grid-cols-3 gap-4 text-center">
+      <div class="bg-white shadow p-4 rounded"><p class="text-sm text-gray-500">输入总数</p><p class="text-xl font-semibold">${addrs.length}</p></div>
+      <div class="bg-white shadow p-4 rounded"><p class="text-sm text-gray-500">早鸟 + BuildKey</p><p class="text-xl font-semibold text-green-600">${both.length}</p></div>
+      <div class="bg-white shadow p-4 rounded"><p class="text-sm text-gray-500">仅 BuildKey</p><p class="text-xl font-semibold text-indigo-600">${buildOnly.length}</p></div>
+    </div>`;
+
+  // 渲染表格
+  const results = document.getElementById('results');
+  results.innerHTML = '';
+
+  function renderTable(title, arr, color) {
+    if (!arr.length) return '';
+    const rows = arr.map(a=>`<tr class="border-b"><td class="px-4 py-2 font-mono text-xs break-all">${a}</td></tr>`).join('');
+    return `
+    <div>
+      <h2 class="text-lg font-medium mb-2 text-${color}-600">${title}（${arr.length}）</h2>
+      <div class="overflow-x-auto bg-white shadow rounded">
+        <table class="min-w-full text-left text-sm"><tbody>${rows}</tbody></table>
       </div>
-    </section>
+    </div>`;
+  }
 
-    <!-- 仅 BuildKey 表格 -->
-    <section>
-      <h2 class="text-2xl font-semibold mb-2">仅 BuildKey（Key Only）</h2>
-      <div class="overflow-x-auto rounded-lg shadow">
-        <table class="min-w-full bg-white">
-          <thead class="bg-slate-200">
-            <tr>
-              <th class="px-4 py-2 text-left">地址</th>
-              <th class="px-4 py-2 text-left">说明</th>
-            </tr>
-          </thead>
-          <tbody id="keyTable"></tbody>
-        </table>
-      </div>
-    </section>
+  results.insertAdjacentHTML('beforeend', renderTable('早鸟 + BuildKey 资格', both, 'green'));
+  results.insertAdjacentHTML('beforeend', renderTable('仅 BuildKey 资格', buildOnly, 'indigo'));
 
-    <script>
-      /**
-       * 读取 data.txt 并渲染
-       * data.txt 放在与 index.html 同级目录，格式：
-       * 地址<TAB>中文描述<TAB>英文描述\n
-       */
-      async function loadData() {
-        try {
-          const res = await fetch('data.txt');
-          if (!res.ok) throw new Error('读取 data.txt 失败');
-          const text = await res.text();
-
-          // 按行拆分
-          const rows = text.trim().split(/\r?\n/);
-
-          // 解析成对象数组
-          const parsed = rows.map(line => {
-            const [addr, zh, en] = line.split('\t');
-            return { addr, zh, en };
-          });
-
-          // 根据中文描述判断类别
-          const earlyList = parsed.filter(r => r.zh.includes('浼樺厛') || r.zh.includes('Early Access')); // 早鸟+打新
-          const keyOnlyList = parsed.filter(r => !earlyList.includes(r)); // 只有打新
-
-          // 渲染表格
-          renderTable('#earlyTable', earlyList);
-          renderTable('#keyTable', keyOnlyList);
-
-          // 渲染统计
-          renderStats(earlyList.length, keyOnlyList.length, parsed.length);
-        } catch (err) {
-          document.body.innerHTML = `<div class="text-red-600 text-center mt-20">${err.message}</div>`;
-        }
-      }
-
-      // 生成 <tr>
-      function renderTable(selector, data) {
-        const tbody = document.querySelector(selector);
-        tbody.innerHTML = data
-          .map(
-            r => `<tr class="even:bg-slate-50 hover:bg-amber-50"><td class="px-4 py-1 font-mono break-all">${r.addr}</td><td class="px-4 py-1">${r.en || r.zh}</td></tr>`
-          )
-          .join('');
-      }
-
-      // 显示总数
-      function renderStats(early, keyOnly, total) {
-        document.getElementById('stats').innerHTML = `
-          <div class="bg-white rounded-lg shadow p-4 text-center">
-            <div class="text-xl font-bold">早鸟 + Key</div>
-            <div class="text-3xl font-semibold text-emerald-600">${early}</div>
-          </div>
-          <div class="bg-white rounded-lg shadow p-4 text-center">
-            <div class="text-xl font-bold">仅 Key</div>
-            <div class="text-3xl font-semibold text-blue-600">${keyOnly}</div>
-          </div>
-          <div class="bg-white rounded-lg shadow p-4 text-center md:col-span-2">
-            <div class="text-xl font-bold">总地址数</div>
-            <div class="text-3xl font-semibold text-fuchsia-600">${total}</div>
-          </div>`;
-      }
-
-      // 初始化
-      loadData();
-    </script>
-  </body>
+  if (notFound.length) {
+    results.insertAdjacentHTML('beforeend', renderTable('未找到（请确认地址）', notFound, 'red'));
+  }
+});
+</script>
+</body>
 </html>
